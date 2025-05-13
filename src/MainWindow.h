@@ -37,6 +37,7 @@ private:
           + "/Leksusmart Games/Collector notes";
     QSqlTableModel *model = nullptr;
     QTimer *timerAutosave = nullptr;
+    QList<int> columnsToDelete;
 private slots:
     void closeEvent(QCloseEvent *event) override;
     void log(QString message) { qDebug() << message; }
@@ -49,5 +50,8 @@ private slots:
     void createFile();
     void addRow();
     void deleteRow();
+    void addColumn();
+    void deleteColumn();
+    QString getColumnName(int columnIndex);
 };
 #endif // MAINWINDOW_H

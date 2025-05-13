@@ -28,26 +28,19 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(ui->pushButton_openFile, &QPushButton::clicked, this, &MainWindow::openFile);
     connect(ui->pushButton_createFile, &QPushButton::clicked, this, &MainWindow::createFile);
-    connect(ui->pushButton_add, &QPushButton::clicked, this, &MainWindow::addRow);
-    connect(ui->pushButton_delete, &QPushButton::clicked, this, &MainWindow::deleteRow);
+    connect(ui->pushButton_addRow, &QPushButton::clicked, this, &MainWindow::addRow);
+    connect(ui->pushButton_deleteRow, &QPushButton::clicked, this, &MainWindow::deleteRow);
+    connect(ui->pushButton_addColumn, &QPushButton::clicked, this, &MainWindow::addColumn);
+    connect(ui->pushButton_deleteColumn, &QPushButton::clicked, this, &MainWindow::deleteColumn);
+    connect(ui->pushButton_save, &QPushButton::clicked, this, &MainWindow::saveDB);
 
     timerAutosave = new QTimer(this);
     timerAutosave->setInterval(60000); // 1 минута
-    timerAutosave->start();
     connect(timerAutosave, &QTimer::timeout, [this]() {
+        log("Autosave");
         saveDB();
         timerAutosave->start();
     });
-
-    /*
-1.✅Инициализация SQL: data = QSqlDatabase::addDatabase("QSQLITE")
-2.✅Открыть базу по пути, чтобы SQL создал файл: setDatabaseName() перед open()
-3.✅Создание таблицы: Создать таблицу в базе данных: query.exec().
-4.✅Заполнить model данными из базы: model->select();
-5.✅Настроить model.
-6.✅Настройка QTableView.
-7.Сохранение: model->submitAll();
-     */
 }
 void MainWindow::createFile()
 {
@@ -80,6 +73,7 @@ void MainWindow::createFile()
         log("Попытка сохранить...");
         saveDB();
         ui->stackedWidget->setCurrentIndex(MAIN_PAGE);
+        timerAutosave->start();
     } else
         QMessageBox::critical(this, tr("Open File"), tr("Could not open created database."));
 }
@@ -101,6 +95,7 @@ void MainWindow::openFile()
         log("Попытка сохранить...");
         saveDB();
         ui->stackedWidget->setCurrentIndex(MAIN_PAGE);
+        timerAutosave->start();
     }
 }
 bool MainWindow::openDB(QString path)
@@ -132,19 +127,36 @@ void MainWindow::customizeTable()
     // Настройка QTableView
     ui->tableView->setModel(model);
     ui->tableView->setSelectionMode(QAbstractItemView::SingleSelection);
-    ui->tableView->setSelectionBehavior(QAbstractItemView::SelectRows);
+    ui->tableView->setSelectionBehavior(QAbstractItemView::SelectItems);
     ui->tableView->setAlternatingRowColors(true);
-    ui->tableView->setEditTriggers(QAbstractItemView::SelectedClicked
-                                   | QAbstractItemView::EditKeyPressed);
-    ui->tableView->setShowGrid(true);
+    ui->tableView->setEditTriggers(QAbstractItemView::CurrentChanged
+                                   | QAbstractItemView::AnyKeyPressed);
     ui->tableView->setStyleSheet("QTableView {"
-                                 "  gridline-color: #FFFFFF;" // Ваш цвет границ
+                                 "  gridline-color: #FFFFFF;"
                                  "}"
                                  "QTableView::item {"
                                  "  padding: 5px;"
                                  "}"
+                                 "QTableView::item:selected {"
+                                 "  background-color: rgb(150,150,150);"
+                                 "  color: black;"
+                                 "}"
+                                 "QTableView::item:selected:!active {"
+                                 "  background-color: rgb(150,150,150);" // Цвет строки
+                                 "  color: black;"
+                                 "}"
+                                 "QTableView QLineEdit {"
+                                 "  border: none;"
+                                 "  background: transparent;"
+                                 "  padding: 0px;"
+                                 "  margin: 0px;"
+                                 "}"
+                                 "QTableView QLineEdit:focus {"
+                                 "  border: none;"
+                                 "  background: transparent;"
+                                 "}"
                                  "QHeaderView::section {"
-                                 "  background-color: #000000;" // Серый фон заголовков
+                                 "  background-color: #000000;"
                                  "  padding: 4px;"
                                  "  font-weight: bold;"
                                  "}");
@@ -185,46 +197,164 @@ bool MainWindow::saveDB()
 }
 void MainWindow::addRow()
 {
-    int row = model->rowCount();
-    if (model->insertRow(row)) {
-        model->setData(model->index(row, 1), "ПУСТО");
-        model->setData(model->index(row, 2), "ПУСТО");
-        ui->tableView->scrollToBottom();
-    } else {
-        log("Ошибка добавления строки:" + model->lastError().text());
-        QMessageBox::warning(this, tr("Добавить строку"), tr("Ошибка добавления строки."));
-    }
-}
+    QSqlQuery query(data);
+    QString tableName = model->tableName();
 
-void MainWindow::deleteRow()
-{
-    QModelIndexList selected = ui->tableView->selectionModel()->selectedRows();
-    if (selected.isEmpty()) {
-        QMessageBox::warning(this, tr("Delete Row"), tr("No row selected."));
+    // Получаем список столбцов
+    if (!query.exec("PRAGMA table_info(" + tableName + ")")) {
+        log("Ошибка выполнения PRAGMA table_info: " + query.lastError().text());
+        QMessageBox::warning(this, tr("Добавить строку"), tr("Ошибка получения структуры таблицы."));
         return;
     }
-    int row = selected.at(0).row();
-    if (model->removeRow(row)) {
-        if (model->submitAll()) {
-            log("Строка удалена");
-        } else {
-            qDebug() << "Ошибка сохранения после удаления:" << model->lastError().text();
-            QMessageBox::warning(this, tr("Delete Row"), tr("Failed to save changes."));
+    QStringList columns;
+    while (query.next()) {
+        int cid = query.value("cid").toInt();
+        QString columnName = query.value("name").toString();
+        if (cid != 0) { // Пропускаем столбец id
+            columns.append(columnName);
         }
-    } else {
-        qDebug() << "Ошибка удаления строки:" << model->lastError().text();
-        QMessageBox::warning(this, tr("Delete Row"), tr("Failed to delete row."));
     }
-    customizeTable();
-}
 
+    // Формируем SQL-запрос
+    QStringList values;
+    for (int i = 0; i < columns.size(); ++i) {
+        values.append("'Пусто'");
+    }
+    QString insertQuery = QString("INSERT INTO " + tableName + " (" + columns.join(", ")
+                                  + ") VALUES (" + values.join(", ") + ")");
+    if (query.exec(insertQuery)) {
+        log("Строка добавлена.");
+
+        // Обновляем модель
+        model->setTable(model->tableName());
+        model->setEditStrategy(QSqlTableModel::OnManualSubmit);
+        customizeModel();
+        model->select();
+
+        // Обновляем отображение
+        customizeTable();
+        ui->tableView->scrollToBottom();
+    } else {
+        log("Ошибка добавления строки через SQL: " + query.lastError().text());
+        QMessageBox::warning(this,
+                             tr("Добавить строку"),
+                             tr("Ошибка добавления строки: %1").arg(query.lastError().text()));
+    }
+}
+void MainWindow::deleteRow()
+{
+    QModelIndex currentIndex = ui->tableView->selectionModel()->currentIndex();
+    int row = model->rowCount() - 1;
+    if (currentIndex.isValid())
+        row = currentIndex.row();
+    else {
+        log("Удаление строки: Не выделена ячейка. Удаление последней строки...");
+    }
+
+    if (row <= 0)
+        return;
+
+    saveDB();
+    QSqlQuery query(data);
+    QString request = QString("DELETE FROM " + model->tableName() + " WHERE id = "
+                              + QString::number(model->data(model->index(row, 0)).toInt()));
+    if (query.exec(request)) {
+        log("Строка удалёна, сохранена база данных");
+        // Переинициализируем модель
+        model->setTable(model->tableName());
+        model->setEditStrategy(QSqlTableModel::OnManualSubmit);
+        customizeModel(); // Устанавливаем заголовки
+        model->select();
+
+        // Обновляем отображение
+        customizeTable();
+    } else {
+        log("Ошибка удаления строки: " + query.lastError().text());
+        QMessageBox::warning(this,
+                             tr("Ошибка"),
+                             tr("Не возможно удалить: %1").arg(query.lastError().text()));
+    }
+}
+void MainWindow::addColumn()
+{
+    int column = model->columnCount();
+    saveDB();
+    QSqlQuery query(data);
+    QString request = QString("ALTER TABLE " + model->tableName() + " ADD content"
+                              + QString::number(column) + " TEXT DEFAULT 'Пусто'");
+    if (query.exec(request)) {
+        log("Столбец добавлен и сохранен в базе данных");
+        // Переинициализируем модель
+        model->setTable(model->tableName());
+        model->setEditStrategy(QSqlTableModel::OnManualSubmit);
+        customizeModel(); // Устанавливаем заголовки
+        model->select();
+
+        // Обновляем отображение
+        customizeTable();
+    } else {
+        log("Ошибка добавления столбца в таблицу:" + query.lastError().text());
+        QMessageBox::warning(this, tr("Добавить столбец"), tr("Ошибка добавления столбца."));
+    }
+}
+void MainWindow::deleteColumn()
+{
+    int column = model->columnCount() - 1;
+    QModelIndex currentIndex = ui->tableView->selectionModel()->currentIndex();
+    if (currentIndex.isValid())
+        column = currentIndex.column();
+    else
+        log("Удаление столбца: Не выделена ячейка. Удаление последнего столбца...");
+
+    if (column <= 1)
+        return;
+
+    saveDB();
+    QSqlQuery query(data);
+    QString request = QString("ALTER TABLE " + model->tableName() + " DROP COLUMN "
+                              + getColumnName(column));
+    if (query.exec(request)) {
+        log("Столбец удалён, сохранена база данных");
+        // Переинициализируем модель
+        model->setTable(model->tableName());
+        model->setEditStrategy(QSqlTableModel::OnManualSubmit);
+        customizeModel(); // Устанавливаем заголовки
+        model->select();
+
+        // Обновляем отображение
+        customizeTable();
+    } else {
+        log("Ошибка удаления столбца из таблицы:" + query.lastError().text());
+        QMessageBox::warning(this, tr("Удалить столбец"), tr("Ошибка удаления столбца."));
+    }
+}
+QString MainWindow::getColumnName(int columnIndex)
+{
+    QSqlQuery query(data);
+    QString tableName = model->tableName(); // "notes1"
+    if (!query.exec("PRAGMA table_info(" + tableName + ")")) {
+        log("Ошибка выполнения PRAGMA table_info: " + query.lastError().text());
+        return QString();
+    }
+
+    while (query.next()) {
+        int cid = query.value("cid").toInt();
+        if (cid == columnIndex) {
+            return query.value("name").toString(); // Возвращаем имя столбца
+        }
+    }
+
+    log("Столбец с индексом " + QString::number(columnIndex) + " не найден.");
+    return QString();
+}
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    if (model != nullptr && model->isDirty()) { // Если есть изменения
+    if (model != nullptr && (model->isDirty())
+        || !columnsToDelete.isEmpty()) { // Если есть изменения
         QMessageBox::StandardButton reply
             = QMessageBox::question(this,
-                                    "Сохранение",
-                                    "Сохранить изменения перед выходом?",
+                                    tr("Сохранение"),
+                                    tr("Сохранить изменения перед выходом?"),
                                     QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
         if (reply == QMessageBox::Yes) {
             if (!saveDB()) {

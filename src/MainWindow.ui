@@ -54,18 +54,43 @@
       <widget class="QWidget" name="page_table">
        <layout class="QVBoxLayout" name="verticalLayout_3">
         <item>
-         <layout class="QHBoxLayout" name="horizontalLayout">
+         <widget class="QPushButton" name="pushButton_save">
+          <property name="text">
+           <string>Сохранить в базу данных</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_Column">
           <item>
-           <widget class="QPushButton" name="pushButton_delete">
+           <widget class="QPushButton" name="pushButton_deleteColumn">
             <property name="text">
-             <string>-</string>
+             <string>Убрать столбец</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="pushButton_add">
+           <widget class="QPushButton" name="pushButton_addColumn">
             <property name="text">
-             <string>+</string>
+             <string>Добавить столбец</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_Row">
+          <item>
+           <widget class="QPushButton" name="pushButton_deleteRow">
+            <property name="text">
+             <string>Убрать ряд</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="pushButton_addRow">
+            <property name="text">
+             <string>Добавить ряд</string>
             </property>
            </widget>
           </item>
